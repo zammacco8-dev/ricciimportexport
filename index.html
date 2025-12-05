@@ -1046,22 +1046,23 @@
   <!-- Firebase compat -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script>
-    // Config del tuo progetto ricci-a1e3a
-    const firebaseConfig = {
-      apiKey: "AIzaSyAH5b0SvCxQoJUmER9jD3UMChvprRWGsE",
-      authDomain: "ricci-a1e3a.firebaseapp.com",
-      projectId: "ricci-a1e3a",
-      storageBucket: "ricci-a1e3a.firebasestorage.app",
-      messagingSenderId: "919882200496",
-      appId: "1:919882200496:web:ef1cf3b9d8c80093759275",
-      measurementId: "G-G5MYXMED4V"
-    };
+<script>
+  // Config corretta del progetto ricci-a1e3a
+  const firebaseConfig = {
+    apiKey: "AIzaSyAH5bOvsCqXoqJUmER9jD3UMChvprRWGsE",
+    authDomain: "ricci-a1e3a.firebaseapp.com",
+    projectId: "ricci-a1e3a",
+    storageBucket: "ricci-a1e3a.firebasestorage.app",
+    messagingSenderId: "919882200496",
+    appId: "1:919882200496:web:ef1cf3b9d8c80093759275",
+    measurementId: "G-G5MYXMED4V"
+  };
 
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    const stateDocRef = db.collection("warehouse").doc("state");
-  </script>
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const stateDocRef = db.collection("warehouse").doc("state");
+</script>
+
 
   <script>
     // ---------------- DATA MODEL ----------------
