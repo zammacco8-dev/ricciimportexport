@@ -571,7 +571,7 @@
           <span class="btn-icon" id="fullscreenIcon">⛶</span>
         </button>
         <div class="pill">
-          Forest Green UI • Cloud Ready
+          Forest Green UI • Cloud Sync
         </div>
       </div>
     </header>
@@ -595,7 +595,7 @@
       </button>
     </nav>
 
-    <!-- SEZIONE INVENTARIO -->
+    <!-- INVENTARIO -->
     <section class="section active" id="inventario">
       <div class="card">
         <div class="card-header">
@@ -709,7 +709,7 @@
               <label for="photo">Foto prodotto (opzionale)</label>
               <input type="file" id="photo" accept="image/*" />
               <div class="hint">
-                L’immagine verrà salvata in locale (base64) sul dispositivo.
+                L’immagine viene salvata come base64 in locale (non su Firebase Storage).
               </div>
             </div>
           </div>
@@ -756,9 +756,6 @@
               <option value="dolci">Dolci</option>
               <option value="secco">Secco</option>
             </select>
-            <button type="button" class="btn-small btn-secondary" id="syncCloudBtn">
-              🔄 Sync Cloud
-            </button>
           </div>
         </div>
 
@@ -782,13 +779,13 @@
         </div>
 
         <div class="hint" style="margin-top: 6px;">
-          Tocca un prodotto nella tabella per modificarlo. Le modifiche vengono salvate su questo dispositivo
-          e, se online, su Firestore (collezione "products").
+          Tocca un prodotto nella tabella per modificarlo. Le modifiche vengono salvate
+          su questo dispositivo e sul cloud (Firestore → documento "warehouse/state").
         </div>
       </div>
     </section>
 
-    <!-- SEZIONE MOVIMENTI -->
+    <!-- MOVIMENTI -->
     <section class="section" id="movimenti">
       <div class="card">
         <div class="card-header">
@@ -885,7 +882,7 @@
       </div>
     </section>
 
-    <!-- SEZIONE ORDINI -->
+    <!-- ORDINI -->
     <section class="section" id="ordini">
       <div class="card">
         <div class="card-header">
@@ -1004,7 +1001,7 @@
       </div>
     </section>
 
-    <!-- SEZIONE BARCODE -->
+    <!-- BARCODE -->
     <section class="section" id="barcode">
       <div class="card">
         <div class="card-header">
@@ -1046,11 +1043,11 @@
 
   <div class="toast" id="toast"></div>
 
-  <!-- Firebase App (compat) + Firestore (compat) -->
+  <!-- Firebase compat -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script>
-    // Configurazione Firebase per il tuo progetto "ricci-a1e3a"
+    // Config del tuo progetto ricci-a1e3a
     const firebaseConfig = {
       apiKey: "AIzaSyAH5b0SvCxQoJUmER9jD3UMChvprRWGsE",
       authDomain: "ricci-a1e3a.firebaseapp.com",
@@ -1061,13 +1058,13 @@
       measurementId: "G-G5MYXMED4V"
     };
 
-    // Inizializza Firebase e Firestore
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
+    const stateDocRef = db.collection("warehouse").doc("state");
   </script>
 
   <script>
-    // --- DATA MODEL & STORAGE ---------------------------------------------
+    // ---------------- DATA MODEL ----------------
     const STORAGE_KEYS = {
       PRODUCTS: "warehouse_products",
       MOVEMENTS: "warehouse_movements",
@@ -1080,6 +1077,7 @@
     let orders = [];
     let currentOrderItems = [];
 
+    // ---------------- UI HELPERS ----------------
     function showToast(message) {
       const toast = document.getElementById("toast");
       toast.textContent = message;
@@ -1117,48 +1115,6 @@
       return yyyy + "-" + mm + "-" + dd;
     }
 
-    function saveProducts() {
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-
-      try {
-        if (typeof db !== "undefined") {
-          const colRef = db.collection("products");
-          products.forEach((p) => {
-            if (!p.id) return;
-            const data = { ...p };
-            data.quantity = Number(data.quantity) || 0;
-            data.purchasePrice = Number(data.purchasePrice) || 0;
-            data.markupPercent = Number(data.markupPercent) || 0;
-            data.salePrice = Number(data.salePrice) || 0;
-
-            colRef
-              .doc(p.id)
-              .set(data)
-              .catch((err) => {
-                console.error("Errore salvataggio prodotto su Firestore:", err);
-              });
-          });
-        }
-      } catch (e) {
-        console.error("Firestore non disponibile durante il salvataggio:", e);
-      }
-    }
-
-    function saveMovements() {
-      localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
-    }
-
-    function saveOrders() {
-      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-    }
-
-    function saveCurrentOrder() {
-      localStorage.setItem(
-        STORAGE_KEYS.CURRENT_ORDER,
-        JSON.stringify(currentOrderItems)
-      );
-    }
-
     function readableCategory(cat) {
       switch (cat) {
         case "formaggi":
@@ -1178,21 +1134,57 @@
       }
     }
 
-    const tabs = document.querySelectorAll(".tab-button");
-    const sections = document.querySelectorAll(".section");
+    // ---------------- PERSISTENZA ----------------
+    function saveLocal() {
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+      localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+      localStorage.setItem(
+        STORAGE_KEYS.CURRENT_ORDER,
+        JSON.stringify(currentOrderItems)
+      );
+    }
 
-    tabs.forEach((tab) => {
-      tab.addEventListener("click", () => {
-        const target = tab.getAttribute("data-tab");
+    async function syncToCloud() {
+      try {
+        await stateDocRef.set(
+          {
+            products,
+            movements,
+            orders,
+            currentOrderItems,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        console.error("Errore sync cloud:", e);
+      }
+    }
 
-        tabs.forEach((t) => t.classList.remove("active"));
-        sections.forEach((s) => s.classList.remove("active"));
+    async function loadFromCloud() {
+      try {
+        const snap = await stateDocRef.get();
+        if (!snap.exists) return false;
+        const data = snap.data() || {};
+        products = data.products || [];
+        movements = data.movements || [];
+        orders = data.orders || [];
+        currentOrderItems = data.currentOrderItems || [];
+        saveLocal();
+        return true;
+      } catch (e) {
+        console.error("Errore load cloud:", e);
+        return false;
+      }
+    }
 
-        tab.classList.add("active");
-        document.getElementById(target).classList.add("active");
-      });
-    });
+    function saveAndSync() {
+      saveLocal();
+      syncToCloud();
+    }
 
+    // ---------------- FULLSCREEN ----------------
     const fullscreenBtn = document.getElementById("fullscreenToggle");
     const fullscreenIcon = document.getElementById("fullscreenIcon");
 
@@ -1222,20 +1214,12 @@
             await document.documentElement.requestFullscreen();
           } else if (document.documentElement.webkitRequestFullscreen) {
             await document.documentElement.webkitRequestFullscreen();
-          } else if (document.documentElement.mozRequestFullScreen) {
-            await document.documentElement.mozRequestFullScreen();
-          } else if (document.documentElement.msRequestFullscreen) {
-            await document.documentElement.msRequestFullscreen();
           }
         } else {
           if (document.exitFullscreen) {
             await document.exitFullscreen();
           } else if (document.webkitExitFullscreen) {
             await document.webkitExitFullscreen();
-          } else if (document.mozCancelFullScreen) {
-            await document.mozCancelFullScreen();
-          } else if (document.msExitFullscreen) {
-            await document.msExitFullscreen();
           }
         }
       } catch (e) {
@@ -1247,36 +1231,24 @@
 
     fullscreenBtn.addEventListener("click", toggleFullscreen);
     document.addEventListener("fullscreenchange", updateFullscreenIcon);
-    document.addEventListener("webkitfullscreenchange", updateFullscreenIcon);
-    document.addEventListener("mozfullscreenchange", updateFullscreenIcon);
-    document.addEventListener("MSFullscreenChange", updateFullscreenIcon);
 
+    // ---------------- TABS ----------------
+    const tabs = document.querySelectorAll(".tab-button");
+    const sections = document.querySelectorAll(".section");
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const target = tab.getAttribute("data-tab");
+        tabs.forEach((t) => t.classList.remove("active"));
+        sections.forEach((s) => s.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById(target).classList.add("active");
+      });
+    });
+
+    // ---------------- ELEMENTI DOM ----------------
     const categoryChips = document.getElementById("categoryChips");
     const productCategorySelect = document.getElementById("productCategory");
-
-    categoryChips.addEventListener("click", (e) => {
-      const chip = e.target.closest(".chip");
-      if (!chip) return;
-
-      const cat = chip.getAttribute("data-category");
-      productCategorySelect.value = cat;
-
-      categoryChips.querySelectorAll(".chip").forEach((c) => {
-        c.classList.remove("active");
-      });
-      chip.classList.add("active");
-    });
-
-    productCategorySelect.addEventListener("change", () => {
-      const cat = productCategorySelect.value;
-      categoryChips.querySelectorAll(".chip").forEach((c) => {
-        if (c.getAttribute("data-category") === cat) {
-          c.classList.add("active");
-        } else {
-          c.classList.remove("active");
-        }
-      });
-    });
 
     const productForm = document.getElementById("productForm");
     const productNameInput = document.getElementById("productName");
@@ -1296,7 +1268,6 @@
     const inventoryCountPill = document.getElementById("inventoryCountPill");
     const filterCategorySelect = document.getElementById("filterCategory");
     const searchInput = document.getElementById("searchInput");
-    const syncCloudBtn = document.getElementById("syncCloudBtn");
 
     const movementForm = document.getElementById("movementForm");
     const movementTypeInput = document.getElementById("movementType");
@@ -1325,6 +1296,11 @@
     const searchBarcodeLocalBtn = document.getElementById("searchBarcodeLocal");
     const searchBarcodeExternalBtn =
       document.getElementById("searchBarcodeExternal");
+
+    // ---------------- UTILITY ----------------
+    function getProductById(id) {
+      return products.find((p) => p.id === id);
+    }
 
     function computeSalePrice() {
       const purchase = parseFloat(purchasePriceInput.value) || 0;
@@ -1368,6 +1344,26 @@
       clearProductForm();
     });
 
+    categoryChips.addEventListener("click", (e) => {
+      const chip = e.target.closest(".chip");
+      if (!chip) return;
+      const cat = chip.getAttribute("data-category");
+      productCategorySelect.value = cat;
+      categoryChips.querySelectorAll(".chip").forEach((c) => {
+        c.classList.toggle("active", c === chip);
+      });
+    });
+
+    productCategorySelect.addEventListener("change", () => {
+      const cat = productCategorySelect.value;
+      categoryChips.querySelectorAll(".chip").forEach((c) => {
+        c.classList.toggle(
+          "active",
+          c.getAttribute("data-category") === cat
+        );
+      });
+    });
+
     function readImageAsBase64(file) {
       return new Promise((resolve, reject) => {
         if (!file) {
@@ -1381,91 +1377,9 @@
       });
     }
 
-    function getProductById(id) {
-      return products.find((p) => p.id === id);
-    }
-
-    productForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-
-      const name = productNameInput.value.trim();
-      if (!name) {
-        showToast("Inserisci il nome del prodotto.");
-        return;
-      }
-
-      const category = productCategoryInput.value;
-      const quantity = parseFloat(productQuantityInput.value) || 0;
-      const purchasePrice = parseFloat(purchasePriceInput.value) || 0;
-      const markupPercent = parseFloat(markupPercentInput.value) || 0;
-      const salePrice = parseFloat(salePriceInput.value) || 0;
-      const purchaseDate = purchaseDateInput.value || null;
-      const expiryDate = expiryDateInput.value || null;
-      const barcode = barcodeInput.value.trim() || null;
-
-      let photoBase64 = null;
-      if (photoInput.files && photoInput.files[0]) {
-        try {
-          photoBase64 = await readImageAsBase64(photoInput.files[0]);
-        } catch (err) {
-          console.error("Errore lettura immagine:", err);
-          showToast("Impossibile leggere la foto, verrà ignorata.");
-        }
-      }
-
-      let existing = products.find(
-        (p) => p.name.toLowerCase() === name.toLowerCase() && p.category === category
-      );
-
-      const now = new Date().toISOString();
-
-      if (existing) {
-        existing.quantity = quantity;
-        existing.purchasePrice = purchasePrice;
-        existing.markupPercent = markupPercent;
-        existing.salePrice = salePrice;
-        existing.purchaseDate = purchaseDate;
-        existing.expiryDate = expiryDate;
-        existing.barcode = barcode;
-        existing.updatedAt = now;
-        if (photoBase64) {
-          existing.photoBase64 = photoBase64;
-        }
-        showToast("Prodotto aggiornato.");
-      } else {
-        const id = "prod_" + Date.now() + "_" + Math.random().toString(16).slice(2);
-        const newProduct = {
-          id,
-          name,
-          category,
-          quantity,
-          purchasePrice,
-          markupPercent,
-          salePrice,
-          purchaseDate,
-          expiryDate,
-          barcode,
-          createdAt: now,
-          updatedAt: now,
-        };
-        if (photoBase64) {
-          newProduct.photoBase64 = photoBase64;
-        }
-        products.push(newProduct);
-        showToast("Prodotto aggiunto.");
-      }
-
-      saveProducts();
-      renderProductsTable();
-      populateProductSelects();
-      renderCurrentOrder();
-      renderOrdersTable();
-      clearProductForm();
-    });
-
+    // ---------------- INVENTARIO LOGICA ----------------
     function renderProductsTable() {
       productsTableBody.innerHTML = "";
-
       let filtered = [...products];
 
       const catFilter = filterCategorySelect.value;
@@ -1576,11 +1490,10 @@
       barcodeInput.value = p.barcode || "";
 
       categoryChips.querySelectorAll(".chip").forEach((c) => {
-        if (c.getAttribute("data-category") === p.category) {
-          c.classList.add("active");
-        } else {
-          c.classList.remove("active");
-        }
+        c.classList.toggle(
+          "active",
+          c.getAttribute("data-category") === p.category
+        );
       });
 
       salePriceHint.textContent =
@@ -1591,18 +1504,13 @@
       if (!confirm("Vuoi davvero eliminare questo prodotto?")) return;
 
       products = products.filter((p) => p.id !== id);
-
       movements = movements.filter((m) => m.productId !== id);
-      orders.forEach((ord) => {
-        ord.items = ord.items.filter((it) => it.productId !== id);
+      orders.forEach((o) => {
+        o.items = o.items.filter((it) => it.productId !== id);
       });
       currentOrderItems = currentOrderItems.filter((it) => it.productId !== id);
 
-      saveProducts();
-      saveMovements();
-      saveOrders();
-      saveCurrentOrder();
-
+      saveAndSync();
       renderProductsTable();
       populateProductSelects();
       renderMovementsTable();
@@ -1613,74 +1521,87 @@
     }
 
     filterCategorySelect.addEventListener("change", renderProductsTable);
-    searchInput.addEventListener("input", () => {
-      renderProductsTable();
-    });
+    searchInput.addEventListener("input", renderProductsTable);
 
-    syncCloudBtn.addEventListener("click", async () => {
-      try {
-        if (typeof db === "undefined") {
-          showToast("Firestore non inizializzato.");
-          return;
-        }
-        const colRef = db.collection("products");
-        const snapshot = await colRef.get();
-        const loaded = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data() || {};
-          if (!data.id) data.id = doc.id;
-          loaded.push(data);
-        });
-        if (loaded.length > 0) {
-          products = loaded;
-          localStorage.setItem(
-            STORAGE_KEYS.PRODUCTS,
-            JSON.stringify(products)
-          );
-          renderProductsTable();
-          populateProductSelects();
-          renderCurrentOrder();
-          renderOrdersTable();
-          showToast("Dati prodotti aggiornati da Firestore.");
-        } else {
-          showToast("Nessun prodotto trovato su Firestore.");
-        }
-      } catch (err) {
-        console.error("Errore sync Firestore:", err);
-        showToast("Errore durante la sincronizzazione.");
+    productForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const name = productNameInput.value.trim();
+      if (!name) {
+        showToast("Inserisci il nome del prodotto.");
+        return;
       }
+
+      const category = productCategoryInput.value;
+      const quantity = parseFloat(productQuantityInput.value) || 0;
+      const purchasePrice = parseFloat(purchasePriceInput.value) || 0;
+      const markupPercent = parseFloat(markupPercentInput.value) || 0;
+      const salePrice = parseFloat(salePriceInput.value) || 0;
+      const purchaseDate = purchaseDateInput.value || null;
+      const expiryDate = expiryDateInput.value || null;
+      const barcode = barcodeInput.value.trim() || null;
+
+      let photoBase64 = null;
+      if (photoInput.files && photoInput.files[0]) {
+        try {
+          photoBase64 = await readImageAsBase64(photoInput.files[0]);
+        } catch (err) {
+          console.error("Errore lettura immagine:", err);
+          showToast("Impossibile leggere la foto, verrà ignorata.");
+        }
+      }
+
+      const now = new Date().toISOString();
+      let existing = products.find(
+        (p) => p.name.toLowerCase() === name.toLowerCase() && p.category === category
+      );
+
+      if (existing) {
+        existing.quantity = quantity;
+        existing.purchasePrice = purchasePrice;
+        existing.markupPercent = markupPercent;
+        existing.salePrice = salePrice;
+        existing.purchaseDate = purchaseDate;
+        existing.expiryDate = expiryDate;
+        existing.barcode = barcode;
+        existing.updatedAt = now;
+        if (photoBase64) existing.photoBase64 = photoBase64;
+        showToast("Prodotto aggiornato.");
+      } else {
+        const id = "prod_" + Date.now() + "_" + Math.random().toString(16).slice(2);
+        const newProduct = {
+          id,
+          name,
+          category,
+          quantity,
+          purchasePrice,
+          markupPercent,
+          salePrice,
+          purchaseDate,
+          expiryDate,
+          barcode,
+          createdAt: now,
+          updatedAt: now,
+        };
+        if (photoBase64) newProduct.photoBase64 = photoBase64;
+        products.push(newProduct);
+        showToast("Prodotto aggiunto.");
+      }
+
+      saveAndSync();
+      renderProductsTable();
+      populateProductSelects();
+      renderCurrentOrder();
+      renderOrdersTable();
+      clearProductForm();
     });
 
-    function populateProductSelects() {
-      movementProductSelect.innerHTML = "";
-      orderProductSelect.innerHTML = "";
-
-      products
-        .slice()
-        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-        .forEach((p) => {
-          const opt1 = document.createElement("option");
-          opt1.value = p.id;
-          opt1.textContent = p.name || "";
-          movementProductSelect.appendChild(opt1);
-
-          const opt2 = document.createElement("option");
-          opt2.value = p.id;
-          opt2.textContent = p.name || "";
-          orderProductSelect.appendChild(opt2);
-        });
-    }
-
+    // ---------------- MOVIMENTI ----------------
     function renderMovementsTable() {
       movementsTableBody.innerHTML = "";
-
-      const sorted = movements.slice().sort((a, b) => {
-        const da = a.date || "";
-        const db = b.date || "";
-        if (da > db) return -1;
-        if (da < db) return 1;
-        return 0;
-      });
+      const sorted = movements.slice().sort((a, b) =>
+        (a.date || "") > (b.date || "") ? -1 : 1
+      );
 
       for (const m of sorted) {
         const tr = document.createElement("tr");
@@ -1732,7 +1653,6 @@
         showToast("Seleziona un prodotto valido.");
         return;
       }
-
       if (quantity <= 0) {
         showToast("Inserisci una quantità maggiore di zero.");
         return;
@@ -1741,12 +1661,9 @@
       const delta = type === "carico" ? quantity : -quantity;
       const newQty = (Number(p.quantity) || 0) + delta;
       if (newQty < 0) {
-        showToast(
-          "Lo scarico supererebbe la quantità disponibile. Operazione annullata."
-        );
+        showToast("Lo scarico supererebbe la quantità disponibile.");
         return;
       }
-
       p.quantity = newQty;
       p.updatedAt = new Date().toISOString();
 
@@ -1760,9 +1677,7 @@
       };
       movements.push(movement);
 
-      saveProducts();
-      saveMovements();
-
+      saveAndSync();
       renderProductsTable();
       renderMovementsTable();
       populateProductSelects();
@@ -1782,6 +1697,7 @@
       movementNoteInput.value = "";
     });
 
+    // ---------------- ORDINI ----------------
     function renderCurrentOrder() {
       currentOrderTableBody.innerHTML = "";
 
@@ -1810,7 +1726,7 @@
           currentOrderItems = currentOrderItems.filter(
             (it) => it.id !== item.id
           );
-          saveCurrentOrder();
+          saveAndSync();
           renderCurrentOrder();
         });
         tdActions.appendChild(delBtn);
@@ -1839,7 +1755,6 @@
         showToast("Seleziona un prodotto valido.");
         return;
       }
-
       if (quantity <= 0) {
         showToast("Inserisci una quantità maggiore di zero.");
         return;
@@ -1853,12 +1768,11 @@
       };
       currentOrderItems.push(item);
 
-      saveCurrentOrder();
+      saveAndSync();
       renderCurrentOrder();
 
       orderQuantityInput.value = "0";
       orderNoteInput.value = "";
-
       showToast("Riga d’ordine aggiunta.");
     });
 
@@ -1873,21 +1787,16 @@
       if (!currentOrderItems.length) return;
       if (!confirm("Vuoi svuotare l’ordine corrente?")) return;
       currentOrderItems = [];
-      saveCurrentOrder();
+      saveAndSync();
       renderCurrentOrder();
       showToast("Ordine corrente svuotato.");
     });
 
     function renderOrdersTable() {
       ordersTableBody.innerHTML = "";
-
-      const sorted = orders.slice().sort((a, b) => {
-        const da = a.createdAt || "";
-        const db = b.createdAt || "";
-        if (da > db) return -1;
-        if (da < db) return 1;
-        return 0;
-      });
+      const sorted = orders.slice().sort((a, b) =>
+        (a.createdAt || "") > (b.createdAt || "") ? -1 : 1
+      );
 
       for (const ord of sorted) {
         const tr = document.createElement("tr");
@@ -1907,11 +1816,12 @@
 
         const tdStatus = document.createElement("td");
         const span = document.createElement("span");
-        span.className = "badge " +
+        span.className =
+          "badge " +
           (ord.status === "open"
             ? "badge-status-open"
             : "badge-status-closed");
-        span.textContent = ord.status === "open" ? "APERT0" : "EVASO";
+        span.textContent = ord.status === "open" ? "APERTO" : "EVASO";
         tdStatus.appendChild(span);
 
         const tdActions = document.createElement("td");
@@ -1922,7 +1832,8 @@
           processBtn.addEventListener("click", () => processOrder(ord.id));
           tdActions.appendChild(processBtn);
         } else {
-          tdActions.innerHTML = "<span class='muted text-small'>Già evaso</span>";
+          tdActions.innerHTML =
+            "<span class='muted text-small'>Già evaso</span>";
         }
 
         tr.appendChild(tdDate);
@@ -1957,10 +1868,8 @@
       };
       orders.push(ord);
 
-      saveOrders();
-
       currentOrderItems = [];
-      saveCurrentOrder();
+      saveAndSync();
 
       renderCurrentOrder();
       renderOrdersTable();
@@ -1985,9 +1894,7 @@
 
       ord.status = "closed";
 
-      saveProducts();
-      saveOrders();
-
+      saveAndSync();
       renderProductsTable();
       populateProductSelects();
       renderOrdersTable();
@@ -1995,6 +1902,7 @@
       showToast("Ordine evaso e magazzino aggiornato.");
     }
 
+    // ---------------- BARCODE ----------------
     searchBarcodeLocalBtn.addEventListener("click", () => {
       const code = barcodeSearchInput.value.trim();
       if (!code) {
@@ -2033,73 +1941,63 @@
         showToast("Inserisci un barcode da cercare.");
         return;
       }
-
       const url =
         "https://www.google.com/search?q=" +
         encodeURIComponent(code + " prodotto barcode");
       window.open(url, "_blank");
     });
 
+    // ---------------- POPOLAMENTO SELECT ----------------
+    function populateProductSelects() {
+      movementProductSelect.innerHTML = "";
+      orderProductSelect.innerHTML = "";
+
+      products
+        .slice()
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        .forEach((p) => {
+          const opt1 = document.createElement("option");
+          opt1.value = p.id;
+          opt1.textContent = p.name || "";
+          movementProductSelect.appendChild(opt1);
+
+          const opt2 = document.createElement("option");
+          opt2.value = p.id;
+          opt2.textContent = p.name || "";
+          orderProductSelect.appendChild(opt2);
+        });
+    }
+
+    // ---------------- INIT ----------------
     async function init() {
+      // 1) carica da localStorage
       products = JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTS) || "[]");
-      movements = JSON.parse(
-        localStorage.getItem(STORAGE_KEYS.MOVEMENTS) || "[]"
-      );
+      movements = JSON.parse(localStorage.getItem(STORAGE_KEYS.MOVEMENTS) || "[]");
       orders = JSON.parse(localStorage.getItem(STORAGE_KEYS.ORDERS) || "[]");
       currentOrderItems = JSON.parse(
         localStorage.getItem(STORAGE_KEYS.CURRENT_ORDER) || "[]"
       );
 
-      try {
-        if (typeof db !== "undefined") {
-          db.collection("products")
-            .get()
-            .then((snapshot) => {
-              const loaded = [];
-              snapshot.forEach((doc) => {
-                const data = doc.data() || {};
-                if (!data.id) {
-                  data.id = doc.id;
-                }
-                loaded.push(data);
-              });
-              if (loaded.length > 0) {
-                products = loaded;
-                localStorage.setItem(
-                  STORAGE_KEYS.PRODUCTS,
-                  JSON.stringify(products)
-                );
-              }
-
-              if (typeof renderProductsTable === "function")
-                renderProductsTable();
-              if (typeof populateProductSelects === "function")
-                populateProductSelects();
-              if (typeof renderMovementsTable === "function")
-                renderMovementsTable();
-              if (typeof renderCurrentOrder === "function")
-                renderCurrentOrder();
-              if (typeof renderOrdersTable === "function") renderOrdersTable();
-            })
-            .catch((err) => {
-              console.error("Errore durante il caricamento da Firestore:", err);
-            });
-        }
-      } catch (e) {
-        console.error("Firestore non disponibile:", e);
-      }
-
+      // 2) render veloce da locale
       computeSalePrice();
       movementDateInput.value = todayISO();
-      purchaseDateInput.value = "";
-      expiryDateInput.value = "";
-
       renderProductsTable();
       populateProductSelects();
       renderMovementsTable();
       renderCurrentOrder();
       renderOrdersTable();
       updateFullscreenIcon();
+
+      // 3) prova a sovrascrivere con il cloud
+      const cloudOk = await loadFromCloud();
+      if (cloudOk) {
+        renderProductsTable();
+        populateProductSelects();
+        renderMovementsTable();
+        renderCurrentOrder();
+        renderOrdersTable();
+        showToast("Dati caricati dal cloud.");
+      }
     }
 
     init();
